@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: atta_postgres
+    environment:
+      POSTGRES_DB: atta_db
+      POSTGRES_USER: atta_user
+      POSTGRES_PASSWORD: atta_password123
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - atta_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atta_user -d atta_db"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: atta_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@attamontacargas.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - atta_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: atta_api
+    environment:
+      DATABASE_URL: postgresql://atta_user:atta_password123@postgres:5432/atta_db
+      JWT_SECRET_KEY: atta_jwt_secret_key_super_secure_2025
+      JWT_ALGORITHM: HS256
+      JWT_ACCESS_TOKEN_EXPIRE_HOURS: 72
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET:-atta-montacargas-files}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/app
+      - ./uploads:/uploads
+    networks:
+      - atta_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  pgadmin_data:
+
+networks:
+  atta_network:
+    driver: bridge

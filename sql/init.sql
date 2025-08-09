@@ -1,0 +1,2 @@
+-- This file can be empty since we're using ORM for database creation
+-- and Python script for initial data insertion
