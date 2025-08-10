@@ -7,20 +7,16 @@ import uuid
 
 from database import get_db
 from models import User, ServiceReport, Client, Contact, Equipment
-from schemas import ServiceReportCreate, ServiceReportUpdate, ServiceReportResponse
+from schemas import (
+    ServiceReportCreate, ServiceReportUpdate, ServiceReportResponse,
+    OperationPoints, InspectionItem
+)
 from routers.auth import get_current_active_user
 from core.config import settings
 from utils.pdf_generator import generate_service_report_pdf
 from fastapi.responses import Response
 
 router = APIRouter()
-
-def get_next_report_number(db: Session) -> int:
-    """Get the next report number."""
-    last_report = db.query(ServiceReport).order_by(desc(ServiceReport.report_number)).first()
-    if last_report:
-        return last_report.report_number + 1
-    return 1001  # Start from 1001
 
 @router.get("/", response_model=List[ServiceReportResponse])
 async def get_service_reports(
@@ -50,8 +46,8 @@ async def get_service_reports(
     if technician_id and current_user.role in ["admin", "jefe"]:
         query = query.filter(ServiceReport.technician_id == technician_id)
     
-    # Order by report number descending
-    reports = query.order_by(desc(ServiceReport.report_number)).offset(skip).limit(limit).all()
+    # Order by id descending (newest first)
+    reports = query.order_by(desc(ServiceReport.id)).offset(skip).limit(limit).all()
     return reports
 
 @router.get("/{report_id}", response_model=ServiceReportResponse)
@@ -84,6 +80,10 @@ async def create_service_report(
     current_user: User = Depends(get_current_active_user)
 ):
     """Create new service report."""
+    print(f"🔍 CREATE REPORT DEBUG - Status received: {getattr(report_data, 'status', 'NOT_SET')}")
+    print(f"🔍 CREATE REPORT DEBUG - Pending reason: {getattr(report_data, 'pending_reason', 'NOT_SET')}")
+    print(f"🔍 CREATE REPORT DEBUG - User: {current_user.name} (Role: {current_user.role})")
+    
     # Validate client exists
     client = db.query(Client).filter(Client.id == report_data.client_id).first()
     if not client:
@@ -127,11 +127,40 @@ async def create_service_report(
             detail=f"Invalid billing type. Must be one of: {', '.join(valid_billing_types)}"
         )
     
-    # Get next report number
-    report_number = get_next_report_number(db)
+    # Convert Pydantic models to dict for JSON serialization
+    equipment_specifications_dict = None
+    if report_data.equipment_specifications:
+        equipment_specifications_dict = report_data.equipment_specifications.model_dump()
     
+    operation_points_dict = None
+    if report_data.operation_points:
+        operation_points_dict = report_data.operation_points.model_dump()
+    
+    inspection_items_dict = None
+    if report_data.inspection_items:
+        inspection_items_dict = [item.model_dump() for item in report_data.inspection_items]
+    
+    applied_parts_dict = None
+    if report_data.applied_parts:
+        applied_parts_dict = [part.model_dump() for part in report_data.applied_parts]
+    
+    work_time_dict = None
+    if report_data.work_time:
+        work_time_dict = report_data.work_time.model_dump()
+    
+    signatures_dict = None
+    if report_data.signatures:
+        signatures_dict = report_data.signatures.model_dump()
+
+    # Determine pending reason
+    pending_reason = report_data.pending_reason or "Reporte creado - pendiente de finalización"
+
+    # Generate report number (get the next sequential number)
+    last_report = db.query(ServiceReport).order_by(desc(ServiceReport.report_number)).first()
+    next_report_number = (last_report.report_number + 1) if last_report else 1001
+
     db_report = ServiceReport(
-        report_number=report_number,
+        report_number=next_report_number,
         date=report_data.date,
         created_by=current_user.id,
         client_id=report_data.client_id,
@@ -142,16 +171,20 @@ async def create_service_report(
         billing_type=report_data.billing_type,
         battery_percentage=report_data.battery_percentage,
         horometer_readings=report_data.horometer_readings,
+        equipment_specifications=equipment_specifications_dict,
         work_performed=report_data.work_performed,
         detected_damages=report_data.detected_damages,
         possible_causes=report_data.possible_causes,
         activities_performed=report_data.activities_performed,
-        operation_points=report_data.operation_points,
-        inspection_items=report_data.inspection_items,
+        operation_points=operation_points_dict,
+        inspection_items=inspection_items_dict,
         technician_comments=report_data.technician_comments,
-        applied_parts=report_data.applied_parts,
-        work_time=report_data.work_time,
-        status="pending"
+        client_observations=report_data.client_observations,
+        applied_parts=applied_parts_dict,
+        work_time=work_time_dict,
+        signatures=signatures_dict,
+        status=report_data.status,
+        pending_reason=pending_reason
     )
     
     db.add(db_report)
@@ -168,6 +201,11 @@ async def update_service_report(
     current_user: User = Depends(get_current_active_user)
 ):
     """Update service report."""
+    # Debug logging
+    print(f"🔍 DEBUG: Updating report {report_id}")
+    print(f"🔍 DEBUG: Request data type: {type(report_data)}")
+    print(f"🔍 DEBUG: Request data: {report_data}")
+    
     report = db.query(ServiceReport).filter(ServiceReport.id == report_id).first()
     if not report:
         raise HTTPException(
@@ -188,6 +226,13 @@ async def update_service_report(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot edit completed reports"
             )
+        
+        # If operator is setting status to pending, require a reason
+        if report_data.status == "pending" and not report_data.pending_reason:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="pending_reason is required when setting status to 'pending'"
+            )
     elif current_user.role == "jefe":
         # Supervisors can approve reports (change status to completed)
         if report_data.status and report_data.status not in ["pending", "completed"]:
@@ -195,7 +240,20 @@ async def update_service_report(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid status. Must be 'pending' or 'completed'"
             )
-    
+        
+        # Prevent changing completed reports back to pending
+        if report.status == "completed" and report_data.status == "pending":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot change completed reports back to pending status"
+            )
+        
+        # If setting status to pending, require a reason
+        if report_data.status == "pending" and not report_data.pending_reason:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="pending_reason is required when setting status to 'pending'"
+            )
     # Validate service type if being updated
     if report_data.service_type:
         valid_service_types = ["Preventivo", "Correctivo", "Instalación", "Reparación", "Otro"]
@@ -215,6 +273,17 @@ async def update_service_report(
             )
     
     update_data = report_data.dict(exclude_unset=True)
+    
+    # Handle status transitions
+    if "status" in update_data:
+        if update_data["status"] == "completed":
+            # Clear pending reason when completing a report
+            update_data["pending_reason"] = None
+        elif update_data["status"] == "pending" and not update_data.get("pending_reason"):
+            # Ensure there's a pending reason when setting to pending
+            if not report.pending_reason:  # Only if there wasn't already a reason
+                update_data["pending_reason"] = "Reporte marcado como pendiente"
+    
     for field, value in update_data.items():
         setattr(report, field, value)
     
@@ -379,7 +448,7 @@ async def generate_report_pdf(
     try:
         # Prepare data for PDF
         pdf_data = {
-            "report_number": report.report_number,
+            "report_number": report.id,
             "date": report.date,
             "client": {
                 "name": report.client.name,
@@ -423,7 +492,7 @@ async def generate_report_pdf(
             content=pdf_buffer.getvalue(),
             media_type="application/pdf",
             headers={
-                "Content-Disposition": f"attachment; filename=reporte_{report.report_number}.pdf"
+                "Content-Disposition": f"attachment; filename=reporte_{report.id}.pdf"
             }
         )
         
@@ -456,7 +525,7 @@ async def generate_report_pdf(
     
     # Prepare data for PDF generation
     pdf_data = {
-        "report_number": report.report_number,
+        "report_number": report.id,
         "date": report.date,
         "client": {
             "name": report.client.name,
@@ -501,7 +570,7 @@ async def generate_report_pdf(
             content=pdf_buffer.getvalue(),
             media_type="application/pdf",
             headers={
-                "Content-Disposition": f"attachment; filename=reporte_servicio_{report.report_number}.pdf"
+                "Content-Disposition": f"attachment; filename=reporte_servicio_{report.id}.pdf"
             }
         )
     except Exception as e:
@@ -509,3 +578,15 @@ async def generate_report_pdf(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error generating PDF: {str(e)}"
         )
+
+@router.get("/inspection-items/defaults")
+async def get_default_inspection_items(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Get default inspection items template from database"""
+    # This endpoint is now deprecated - use /api/inspection/templates/service-report instead
+    return {
+        "message": "This endpoint is deprecated. Use /api/inspection/templates/service-report for updated templates from database.",
+        "redirect_to": "/api/inspection/templates/service-report"
+    }

@@ -35,7 +35,7 @@ docker-compose up -d
 | API Principal | http://localhost:8000 | FastAPI backend |
 | Documentación | http://localhost:8000/docs | Swagger UI |
 | PostgreSQL | localhost:5432 | Base de datos |
-| pgAdmin | http://localhost:5050 | Administrador de BD |
+| Adminer | http://localhost:5050 | Administrador de BD |
 
 ## 🔐 Usuarios por Defecto
 
@@ -99,6 +99,33 @@ backend/
 ### Reportes de Servicio
 - `GET /api/service-reports/` - Listar reportes
 - `POST /api/service-reports/` - Crear reporte
+- `PUT /api/service-reports/{id}` - **Actualizar reporte con validaciones de flujo**
+- `GET /api/service-reports/{id}/pdf` - Generar PDF
+- `POST /api/service-reports/{id}/upload-signature` - Subir firma
+
+### 🔄 **Gestión de Estados con Razones de Pendencia** (Nuevo v1.1.0)
+Los reportes ahora incluyen gestión avanzada de estados:
+
+**Estados disponibles:**
+- `pending`: Pendiente (requiere `pending_reason`)
+- `completed`: Completado
+
+**Reglas de negocio:**
+- ✅ **pending → completed**: Permitido (limpia `pending_reason` automáticamente)
+- ❌ **completed → pending**: NO permitido (flujo unidireccional)
+- ✅ **pending → pending**: Permitido (actualizar razón)
+
+**Ejemplo de uso:**
+```bash
+# Marcar como pendiente
+curl -X PUT "/api/service-reports/1" \
+  -d '{"status": "pending", "pending_reason": "Esperando aprobación supervisor"}'
+
+# Aprobar reporte  
+curl -X PUT "/api/service-reports/1" \
+  -d '{"status": "completed"}'
+```
+- `POST /api/service-reports/` - Crear reporte
 - `PUT /api/service-reports/{id}` - Actualizar reporte
 - `GET /api/service-reports/{id}/pdf` - Generar PDF
 - `GET /api/service-reports/statistics/dashboard` - Estadísticas
@@ -130,16 +157,13 @@ backend/
 - **equipment**: Equipos de montacargas
 - **service_reports**: Reportes de servicio (JSON para datos complejos)
 
-### Acceso a pgAdmin
+### Acceso a Adminer
 1. Abrir http://localhost:5050
-2. Email: `admin@attamontacargas.com`
-3. Password: `admin123`
-4. Conectar servidor PostgreSQL:
-   - Host: `postgres`
-   - Port: `5432`
-   - Database: `atta_db`
-   - Username: `atta_user`
-   - Password: `atta_password123`
+2. Seleccionar Sistema: `PostgreSQL`
+3. Servidor: `postgres`
+4. Usuario: `atta_user`
+5. Contraseña: `atta_password123`
+6. Base de datos: `atta_db`
 
 ## 📄 Generación de PDFs
 
