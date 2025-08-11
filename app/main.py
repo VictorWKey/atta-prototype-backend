@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
@@ -57,6 +57,20 @@ async def root():
         "message": "ATTA MONTACARGAS API",
         "version": "1.0.0",
         "status": "running"
+    }
+
+@app.get("/api/test-mobile")
+async def test_mobile_endpoint(request: Request):
+    """Simple test endpoint for mobile debugging"""
+    return {
+        "success": True,
+        "message": "Mobile connection successful",
+        "timestamp": str(request.headers.get("date", "no-date")),
+        "user_agent": request.headers.get("user-agent", "unknown"),
+        "client_ip": request.client.host if request.client else "unknown",
+        "headers": dict(request.headers),
+        "method": request.method,
+        "url": str(request.url)
     }
 
 @app.get("/health")
