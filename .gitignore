@@ -132,11 +132,12 @@ dmypy.json
 .dockerignore
 
 # Uploads and generated files
-uploads/
-*.pdf
-*.png
-*.jpg
-*.jpeg
+# Comentamos temporalmente para incluir las imágenes
+# uploads/
+# *.pdf
+# *.png
+# *.jpg
+# *.jpeg
 
 # IDE
 .vscode/

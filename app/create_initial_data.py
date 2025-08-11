@@ -271,7 +271,6 @@ def create_initial_data():
         # Create sample service reports with comprehensive data (COMPLETE with ALL PDF fields)
         reports_data = [
             {
-                "report_number": 1001,
                 "date": "2025-01-15",
                 "created_by": users[2].id,  # Victor (operador)
                 "client_id": clients[0].id,
@@ -393,7 +392,6 @@ def create_initial_data():
                 "status": "completed"
             },
             {
-                "report_number": 1002,
                 "date": "2025-01-16",
                 "created_by": users[2].id,  # Victor (operador)
                 "client_id": clients[1].id,
@@ -516,7 +514,6 @@ def create_initial_data():
                 "status": "completed"
             },
             {
-                "report_number": 1003,
                 "date": "2025-07-08", 
                 "created_by": users[1].id,  # Omar (jefe)
                 "client_id": clients[2].id,
@@ -640,7 +637,6 @@ def create_initial_data():
         
         for report_data in reports_data:
             report = ServiceReport(
-                report_number=report_data["report_number"],
                 date=report_data["date"],
                 created_by=report_data["created_by"],
                 client_id=report_data["client_id"],

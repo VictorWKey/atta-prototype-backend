@@ -236,7 +236,6 @@ Query params: ?status_filter=pending&client_id=1&technician_id=3&skip=0&limit=10
 [
   {
     "id": 1,
-    "report_number": 1001,
     "date": "2025-01-15",
     "created_by": 3,
     "client_id": 1,

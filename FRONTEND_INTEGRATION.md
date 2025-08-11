@@ -79,7 +79,6 @@ interface PossibleCause {
 
 interface ServiceReport {
   id: number;
-  report_number: number;
   date: string;
   created_by: number;
   client_id: number;

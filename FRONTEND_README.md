@@ -133,7 +133,6 @@ const reports = await fetch('/api/service-reports/', { headers });
 ```typescript
 interface ServiceReport {
   id: number;
-  report_number: number; // Auto-generado
   date: string;
   service_type: 'Preventivo' | 'Correctivo' | 'Instalación' | 'Reparación' | 'Otro';
   billing_type: 'Facturación' | 'Renta' | 'Garantía' | 'Sin costo';

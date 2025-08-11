@@ -241,7 +241,6 @@ class ServiceReportUpdate(BaseModel):
 
 class ServiceReportResponse(ServiceReportBase):
     id: int
-    report_number: int
     created_by: int
     client_id: int
     requested_by_id: int

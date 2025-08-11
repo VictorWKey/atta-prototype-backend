@@ -155,12 +155,7 @@ async def create_service_report(
     # Determine pending reason
     pending_reason = report_data.pending_reason or "Reporte creado - pendiente de finalización"
 
-    # Generate report number (get the next sequential number)
-    last_report = db.query(ServiceReport).order_by(desc(ServiceReport.report_number)).first()
-    next_report_number = (last_report.report_number + 1) if last_report else 1001
-
     db_report = ServiceReport(
-        report_number=next_report_number,
         date=report_data.date,
         created_by=current_user.id,
         client_id=report_data.client_id,
@@ -430,7 +425,27 @@ async def generate_report_pdf(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    """Generate PDF for service report."""
+    """
+    Generate and download PDF for service report.
+    
+    Este endpoint genera un PDF del reporte de servicio usando ReportLab.
+    El PDF se genera al momento sin guardarse en disco y se envía como respuesta
+    para descarga directa.
+    
+    Args:
+        report_id: ID del reporte de servicio
+        db: Sesión de base de datos
+        current_user: Usuario autenticado
+    
+    Returns:
+        PDF file as application/pdf response
+    
+    Raises:
+        404: Si el reporte no existe
+        403: Si el usuario no tiene permisos para ver el reporte
+        500: Si hay error generando el PDF
+    """
+    # Buscar el reporte en la base de datos
     report = db.query(ServiceReport).filter(ServiceReport.id == report_id).first()
     if not report:
         raise HTTPException(
@@ -438,7 +453,8 @@ async def generate_report_pdf(
             detail="Service report not found"
         )
     
-    # Role-based access control
+    # Control de acceso basado en roles
+    # Los operadores solo pueden ver sus propios reportes
     if current_user.role == "operador" and report.technician_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -446,134 +462,71 @@ async def generate_report_pdf(
         )
     
     try:
-        # Prepare data for PDF
+        # Preparar datos para la generación del PDF
+        # Se estructuran todos los datos del reporte para el generador de PDF
         pdf_data = {
             "report_number": report.id,
-            "date": report.date,
+            "date": report.date if report.date else "N/A",
             "client": {
-                "name": report.client.name,
-                "address": report.client.address
+                "name": report.client.name if report.client else "N/A",
+                "address": report.client.address if report.client else "N/A"
             },
             "requested_by": {
-                "name": report.requested_by.name,
-                "position": report.requested_by.position
+                "name": report.requested_by.name if report.requested_by else "N/A",
+                "position": report.requested_by.position if report.requested_by else "N/A"
             },
             "equipment": {
-                "type": report.equipment.type,
-                "brand": report.equipment.brand,
-                "model": report.equipment.model,
-                "serial_number": report.equipment.serial_number
+                "type": report.equipment.type if report.equipment else "N/A",
+                "brand": report.equipment.brand if report.equipment else "N/A",
+                "model": report.equipment.model if report.equipment else "N/A",
+                "serial_number": report.equipment.serial_number if report.equipment else "N/A"
             },
             "technician": {
-                "name": report.technician.name,
-                "position": report.technician.position
+                "name": report.technician.name if report.technician else "N/A",
+                "position": report.technician.position if report.technician else "N/A"
             },
-            "service_type": report.service_type,
-            "billing_type": report.billing_type,
+            "service_type": report.service_type or "N/A",
+            "billing_type": report.billing_type or "N/A",
             "battery_percentage": report.battery_percentage,
-            "horometer_readings": report.horometer_readings,
-            "work_performed": report.work_performed,
-            "detected_damages": report.detected_damages,
-            "possible_causes": report.possible_causes,
-            "activities_performed": report.activities_performed,
-            "operation_points": report.operation_points,
-            "inspection_items": report.inspection_items,
-            "technician_comments": report.technician_comments,
-            "applied_parts": report.applied_parts,
-            "work_time": report.work_time,
-            "status": report.status
+            "horometer_readings": report.horometer_readings or {},
+            "work_performed": report.work_performed or "N/A",
+            "detected_damages": report.detected_damages or "N/A",
+            "possible_causes": report.possible_causes or "N/A",
+            "activities_performed": report.activities_performed or "N/A",
+            "operation_points": report.operation_points or "N/A",
+            "inspection_items": report.inspection_items or [],
+            "technician_comments": report.technician_comments or "",
+            "applied_parts": report.applied_parts or [],
+            "work_time": report.work_time or {},
+            "status": report.status or "N/A"
         }
         
-        # Generate PDF
-        pdf_buffer = generate_service_report_pdf(pdf_data)
+        # Generar PDF usando ReportLab - Versión Compacta
+        # El generador devuelve un BytesIO buffer con el PDF
+        from utils.pdf_generator_compact import generate_service_report_pdf_compact
+        pdf_buffer = generate_service_report_pdf_compact(pdf_data)
         
-        # Return PDF as response
+        # Crear nombre de archivo descriptivo
+        date_str = report.date.replace("-", "") if report.date else "sin_fecha"
+        filename = f"reporte_servicio_{report.id}_{date_str}.pdf"
+        
+        # Retornar PDF como respuesta para descarga
+        # Content-Disposition con attachment fuerza la descarga
         return Response(
             content=pdf_buffer.getvalue(),
             media_type="application/pdf",
             headers={
-                "Content-Disposition": f"attachment; filename=reporte_{report.id}.pdf"
+                "Content-Disposition": f"attachment; filename={filename}",
+                "Content-Length": str(len(pdf_buffer.getvalue())),
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0"
             }
         )
         
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error generating PDF: {str(e)}"
-        )
-
-@router.get("/{report_id}/pdf")
-async def generate_report_pdf(
-    report_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
-):
-    """Generate PDF for service report."""
-    report = db.query(ServiceReport).filter(ServiceReport.id == report_id).first()
-    if not report:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Service report not found"
-        )
-    
-    # Role-based access control
-    if current_user.role == "operador" and report.technician_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not enough permissions"
-        )
-    
-    # Prepare data for PDF generation
-    pdf_data = {
-        "report_number": report.id,
-        "date": report.date,
-        "client": {
-            "name": report.client.name,
-            "address": report.client.address
-        },
-        "requested_by": {
-            "name": report.requested_by.name,
-            "position": report.requested_by.position
-        },
-        "equipment": {
-            "type": report.equipment.type,
-            "brand": report.equipment.brand,
-            "model": report.equipment.model,
-            "serial_number": report.equipment.serial_number
-        },
-        "service_type": report.service_type,
-        "billing_type": report.billing_type,
-        "battery_percentage": report.battery_percentage,
-        "horometer_readings": report.horometer_readings,
-        "work_performed": report.work_performed,
-        "detected_damages": report.detected_damages,
-        "possible_causes": report.possible_causes,
-        "activities_performed": report.activities_performed,
-        "operation_points": report.operation_points,
-        "inspection_items": report.inspection_items,
-        "technician_comments": report.technician_comments,
-        "applied_parts": report.applied_parts,
-        "work_time": report.work_time,
-        "technician": {
-            "name": report.technician.name,
-            "position": report.technician.position
-        },
-        "status": report.status
-    }
-    
-    # Generate PDF
-    try:
-        pdf_buffer = generate_service_report_pdf(pdf_data)
-        
-        # Return PDF as response
-        return Response(
-            content=pdf_buffer.getvalue(),
-            media_type="application/pdf",
-            headers={
-                "Content-Disposition": f"attachment; filename=reporte_servicio_{report.id}.pdf"
-            }
-        )
-    except Exception as e:
+        # Log del error para debugging
+        print(f"Error generating PDF for report {report_id}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error generating PDF: {str(e)}"

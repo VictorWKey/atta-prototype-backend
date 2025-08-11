@@ -67,7 +67,6 @@ class ServiceReport(Base):
     __tablename__ = "service_reports"
     
     id = Column(Integer, primary_key=True, index=True)
-    report_number = Column(Integer, unique=True, nullable=False)
     date = Column(String, nullable=False)
     
     # Foreign Keys
