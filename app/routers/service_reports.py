@@ -29,12 +29,17 @@ async def get_service_reports(
     current_user: User = Depends(get_current_active_user)
 ):
     """Get service reports with filters."""
+    print(f"🔍 SERVICE REPORTS GET: User {current_user.name} (ID: {current_user.id}, Role: {current_user.role}) requesting reports")
+    
     query = db.query(ServiceReport)
     
     # Role-based filtering
     if current_user.role == "operador":
-        # Operators can only see their own reports
-        query = query.filter(ServiceReport.technician_id == current_user.id)
+        # Operators can only see reports they created
+        print(f"🔒 FILTERING for operador: Only showing reports where created_by = {current_user.id}")
+        query = query.filter(ServiceReport.created_by == current_user.id)
+    else:
+        print(f"🔓 NO FILTERING: User role '{current_user.role}' can see all reports")
     
     # Apply filters
     if status_filter:
@@ -48,6 +53,12 @@ async def get_service_reports(
     
     # Order by id descending (newest first)
     reports = query.order_by(desc(ServiceReport.id)).offset(skip).limit(limit).all()
+    
+    print(f"📊 QUERY RESULT: Found {len(reports)} reports for user {current_user.name}")
+    if reports:
+        for report in reports:
+            print(f"  - Report #{report.id}: technician_id={report.technician_id}, created_by={report.created_by}")
+    
     return reports
 
 @router.get("/{report_id}", response_model=ServiceReportResponse)
@@ -65,7 +76,7 @@ async def get_service_report(
         )
     
     # Role-based access control
-    if current_user.role == "operador" and report.technician_id != current_user.id:
+    if current_user.role == "operador" and report.created_by != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions"
@@ -210,8 +221,8 @@ async def update_service_report(
     
     # Role-based access control
     if current_user.role == "operador":
-        # Operators can only edit their own pending reports
-        if report.technician_id != current_user.id:
+        # Operators can only edit reports they created
+        if report.created_by != current_user.id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not enough permissions"
@@ -303,8 +314,8 @@ async def delete_service_report(
     
     # Role-based access control
     if current_user.role == "operador":
-        # Operators can only delete their own pending reports
-        if report.technician_id != current_user.id:
+        # Operators can only delete reports they created
+        if report.created_by != current_user.id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not enough permissions"
@@ -388,7 +399,7 @@ async def get_dashboard_statistics(
     
     # Role-based filtering
     if current_user.role == "operador":
-        query = query.filter(ServiceReport.technician_id == current_user.id)
+        query = query.filter(ServiceReport.created_by == current_user.id)
     
     total_reports = query.count()
     pending_reports = query.filter(ServiceReport.status == "pending").count()
@@ -454,8 +465,8 @@ async def generate_report_pdf(
         )
     
     # Control de acceso basado en roles
-    # Los operadores solo pueden ver sus propios reportes
-    if current_user.role == "operador" and report.technician_id != current_user.id:
+    # Los operadores solo pueden ver reportes que crearon
+    if current_user.role == "operador" and report.created_by != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions"
