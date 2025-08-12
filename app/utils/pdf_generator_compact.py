@@ -739,22 +739,32 @@ def _create_bottom_section(report_data: Dict[str, Any], section_style: Paragraph
     
     elements.append(parts_time_table)
     
-    # Firmas
+    # Firmas con información del creador del reporte
     signatures = report_data.get('signatures', {})
+    created_by = report_data.get('created_by', {})
+    creator_name = created_by.get('name', 'N/A')
+    technician_name = signatures.get('technician', {}).get('name', 'TÉCNICO')
+    client_name = signatures.get('client', {}).get('name', 'CLIENTE')
+    
+    # Crear texto combinado para el técnico con el creador del reporte
+    tech_text = f"Técnico de servicio que valoró la inspección:\n{technician_name}"
+    if creator_name != 'N/A' and creator_name != technician_name:
+        tech_text = f"Técnico de servicio que valoró la inspección:\n{creator_name}"
+    
     sig_data = [
         ['SELLO DE LA EMPRESA', 'CONFORMIDAD AUTORIZADA'],
         [
-            Paragraph(signatures.get('technician', {}).get('name', 'TÉCNICO'), normal_style),
-            Paragraph(signatures.get('client', {}).get('name', 'CLIENTE'), normal_style)
+            Paragraph(tech_text, ParagraphStyle('tech_sig', fontSize=7, fontName='Helvetica', alignment=TA_CENTER, leading=8)),
+            Paragraph(client_name, ParagraphStyle('client_sig', fontSize=7, fontName='Helvetica', alignment=TA_CENTER, leading=8))
         ]
     ]
     
-    sig_table = Table(sig_data, colWidths=[3.75*inch, 3.75*inch], rowHeights=[0.3*inch, 0.6*inch])  # Aumentado de 3.25 a 3.75
+    sig_table = Table(sig_data, colWidths=[3.75*inch, 3.75*inch], rowHeights=[0.25*inch, 0.6*inch])  # Reducido de 0.3 a 0.25
     sig_table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.red),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('FONTSIZE', (0, 0), (-1, 0), 6),  # Reducido de 8 a 6
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
         ('GRID', (0, 0), (-1, -1), 1, colors.black),
         ('VALIGN', (0, 0), (-1, -1), 'BOTTOM'),

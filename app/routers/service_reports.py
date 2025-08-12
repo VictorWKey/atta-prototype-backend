@@ -496,6 +496,10 @@ async def generate_report_pdf(
                 "name": report.technician.name if report.technician else "N/A",
                 "position": report.technician.position if report.technician else "N/A"
             },
+            "created_by": {
+                "name": report.created_by_user.name if report.created_by_user else "N/A",
+                "position": report.created_by_user.position if report.created_by_user else "N/A"
+            },
             "service_type": report.service_type or "N/A",
             "billing_type": report.billing_type or "N/A",
             "battery_percentage": report.battery_percentage,

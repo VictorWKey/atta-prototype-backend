@@ -255,6 +255,7 @@ class ServiceReportResponse(ServiceReportBase):
     
     # Nested relationships
     technician: UserResponse
+    created_by_user: UserResponse
     client: ClientResponse
     requested_by: ContactResponse
     equipment: EquipmentResponse
